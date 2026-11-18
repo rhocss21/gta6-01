@@ -80,8 +80,12 @@ if (indexStat.size > INDEX_HTML_MAX_BYTES) {
 const shots = checkScreenshots(shotsDir);
 
 // ---- hand-in: copy, then write the dossier buildDossier computes ----
-rmSync(OUT_DIR, { recursive: true, force: true });
+// Never remove OUT_DIR itself: in the grader it is a bind-mounted volume and
+// removing a mount point fails (EBUSY). Create it, then clear only its contents.
 mkdirSync(OUT_DIR, { recursive: true });
+for (const name of readdirSync(OUT_DIR)) {
+  rmSync(join(OUT_DIR, name), { recursive: true, force: true });
+}
 cpSync(gameDir, join(OUT_DIR, 'game'), { recursive: true });
 cpSync(shotsDir, join(OUT_DIR, 'screenshots'), { recursive: true });
 const dossier = buildDossier(OUT_DIR, CAPS);
