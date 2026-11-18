@@ -3,80 +3,85 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>SOLMAR CITY — an open-world crime game</title>
+<title>SOLMAR CITY — an open-world crime story</title>
 <link rel="stylesheet" href="./styles.css">
 <script type="importmap">
 { "imports": { "three": "./vendor/three.module.min.js" } }
 </script>
 </head>
 <body>
-<div id="game"></div>
+<div id="app"></div>
 
-<!-- HUD -->
 <div id="hud" class="hidden">
-  <div id="top-left">
-    <div id="cash">$0</div>
-    <div id="health-wrap"><div id="health-bar"></div><span id="health-text">100</span></div>
+  <div id="hud-top-left">
+    <div id="money">$0</div>
+    <div id="health-bar"><div id="health-fill"></div><span id="health-num">100</span></div>
     <div id="ammo">PISTOL 12/12</div>
+    <div id="debt">DEBT TO MARA: $50,000</div>
   </div>
-  <div id="top-right"><div id="stars">☆☆☆☆☆</div><div id="rank">ROOKIE</div></div>
-  <div id="objective"><span id="obj-arrow">▲</span><span id="obj-text">Steal a car</span><span id="obj-dist"></span></div>
-  <div id="speed" class="hidden">0 <small>mph</small></div>
-  <div id="prompt" class="hidden"></div>
+  <div id="mission-banner"><span id="mission-arrow">▶</span> <span id="mission-text"></span> <span id="mission-dist"></span></div>
+  <div id="hud-top-right">
+    <div id="stars"><span>★</span><span>★</span><span>★</span><span>★</span><span>★</span></div>
+    <div id="rank">ROOKIE</div>
+  </div>
+  <div id="crosshair">+</div>
+  <div id="speed"><span id="speed-num">0</span> <span id="speed-unit">mph</span></div>
+  <div id="prompt"></div>
+  <div id="rob-wrap" class="hidden"><div id="rob-label">HOLDING UP THE SHOP…</div><div id="rob-bar"><div id="rob-fill"></div></div></div>
   <div id="toasts"></div>
-  <canvas id="minimap" width="200" height="200"></canvas>
-  <div id="crosshair" class="hidden">+</div>
-  <div id="rob-progress" class="hidden"><div id="rob-fill"></div><span>ROBBING…</span></div>
+  <canvas id="minimap" width="360" height="360"></canvas>
+  <div id="vignette"></div>
 </div>
-<div id="flash"></div>
 
-<!-- Start screen -->
-<div id="menu" class="screen">
+<div id="menu" class="overlay">
   <div class="panel">
     <h1>SOLMAR CITY</h1>
-    <p class="tag">A sun-soaked open-world crime story. Your city. Your debt. Your rules.</p>
-    <p class="story">Jax Marlowe, ex-wheelman, owes fixer <b>Mara Voss</b> $50,000. Five jobs
-    stand between him and freedom — steal, drive, run, and don't get caught.
-    The whole city is open: on foot or behind the wheel.</p>
+    <p class="tagline">A sun-soaked open-world crime story. Your city. Your debt. Your rules.</p>
+    <p class="story">Jax Marlowe, ex-wheelman, owes fixer <b>Mara Voss</b> $50,000. Five jobs stand between him and freedom — steal, drive, run, and don't get caught. The whole city is open: on foot or behind the wheel.</p>
     <div class="controls">
-      <span><b>WASD</b> move / drive</span><span><b>Mouse</b> camera</span>
-      <span><b>E</b> steal / enter / exit car</span><span><b>Space</b> jump / handbrake</span>
-      <span><b>Click</b> shoot</span><span><b>F</b> punch</span>
-      <span><b>R</b> reload</span><span><b>M</b> mute</span><span><b>Esc</b> pause</span>
+      <span><b>WASD</b> move / drive</span><span><b>Mouse</b> camera</span><span><b>E</b> steal / enter / exit car</span><span><b>Space</b> jump / handbrake</span>
+      <span><b>Click</b> shoot</span><span><b>F</b> punch</span><span><b>R</b> reload</span><span><b>M</b> mute</span><span><b>Esc</b> pause</span>
     </div>
-    <div class="buttons">
-      <button id="btn-new">NEW GAME</button>
-      <button id="btn-continue" class="hidden">CONTINUE</button>
-    </div>
-    <p class="fine">Original game — no Rockstar / GTA content. Three.js, static files, no network.</p>
+    <button id="btn-new" class="big-btn">NEW GAME</button>
+    <button id="btn-continue" class="big-btn hidden">CONTINUE</button>
+    <p class="footer">Original game — no Rockstar / GTA content. Three.js, static files, no network.</p>
   </div>
 </div>
 
-<!-- Pause -->
-<div id="pause" class="screen hidden">
+<div id="pause" class="overlay hidden">
   <div class="panel">
-    <h1>PAUSED</h1>
-    <p class="story">Solmar waits for no one. Except right now.</p>
-    <div class="buttons">
-      <button id="btn-resume">RESUME</button>
-      <button id="btn-quit-menu">QUIT TO MENU</button>
-    </div>
+    <h2>PAUSED</h2>
+    <p class="story">Solmar City waits for no one. Except right now.</p>
+    <button id="btn-resume" class="big-btn">RESUME</button>
+    <button id="btn-save" class="big-btn">SAVE GAME</button>
+    <button id="btn-restart" class="big-btn">RESTART</button>
+    <button id="btn-mute" class="big-btn">MUTE: OFF</button>
+    <button id="btn-quit" class="big-btn">QUIT TO MENU</button>
   </div>
 </div>
 
-<!-- Busted / Wasted -->
-<div id="busted" class="screen hidden">
+<div id="busted" class="overlay hidden">
   <div class="panel">
-    <h1 class="red">BUSTED</h1>
-    <p class="story">The Solmar PD dragged you in. Mara posted bail — the debt grows. $200 gone.</p>
-    <div class="buttons"><button id="btn-busted-retry">BACK ON THE STREET</button></div>
+    <h2 class="red">BUSTED</h2>
+    <p class="story">The Solmar PD hauled you in. Bail cost you <b>15%</b> of your cash.</p>
+    <button id="btn-respawn-busted" class="big-btn">WALK OUT OF THE STATION</button>
   </div>
 </div>
-<div id="wasted" class="screen hidden">
+
+<div id="wasted" class="overlay hidden">
   <div class="panel">
-    <h1 class="red">WASTED</h1>
-    <p class="story">You flatlined on Palm Row. The paramedics patched you up — the city is still yours to take.</p>
-    <div class="buttons"><button id="btn-wasted-retry">BACK ON THE STREET</button></div>
+    <h2 class="red">WASTED</h2>
+    <p class="story">You woke up at Solmar General. The hospital bill took <b>10%</b> of your cash.</p>
+    <button id="btn-respawn-wasted" class="big-btn">LEAVE THE HOSPITAL</button>
+  </div>
+</div>
+
+<div id="complete" class="overlay hidden">
+  <div class="panel">
+    <h2 class="gold">DEBT PAID. FREE.</h2>
+    <p class="story">Three shops, one coast run, and a whole lot of heat — Jax Marlowe is a free man. Mara Voss sends her regards. Solmar City is yours now: keep driving, keep stealing, keep the cops guessing.</p>
+    <button id="btn-free-roam" class="big-btn">KEEP PLAYING — FREE ROAM</button>
+    <button id="btn-menu-complete" class="big-btn">BACK TO MENU</button>
   </div>
 </div>
 
