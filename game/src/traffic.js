@@ -1,166 +1,143 @@
-// SOLMAR CITY — living streets: civilian cars looping the road grid and
-// pedestrians on the sidewalks who flee from speeding cars and gunfire.
+// Solmar City — ambient life: 10 AI cars looping the roads and 14 pedestrians
+// who stroll the sidewalks and flee gunfire and near-misses.
 import * as THREE from 'three';
-import { pick, rand, randi } from './util.js';
-import { makeCarMesh, linkCar } from './vehicles.js';
-import { resolveCircle } from './city.js';
+import { makeCarMesh, Car, CAR_COLORS } from './vehicles.js';
+import { roadCenters, blockCenters } from './city.js';
+import { dist2, pickRandom } from './util.js';
 
-const TRAFFIC_COLORS = [0x9aa5ad, 0x4a6a8a, 0xb07840, 0x6a8a4a, 0x8a4a6a, 0xc2b280];
-const SHIRT_COLORS = [0xe8e8e8, 0x3a7bd5, 0xe86a5a, 0x7bc23a, 0xf2c14e, 0x9a5ac2, 0x2a9d8f];
-
-function makePedMesh(shirtColor) {
+function makePedestrianMesh(rng) {
   const g = new THREE.Group();
-  const skin = new THREE.MeshLambertMaterial({ color: pick([0xc98a5e, 0x8a5a3a, 0xe8b88a, 0x6a4a30]) });
-  const shirt = new THREE.MeshLambertMaterial({ color: shirtColor });
-  const pants = new THREE.MeshLambertMaterial({ color: 0x2e3a4a });
-  const torso = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.95, 0.42), shirt);
-  torso.position.y = 1.2;
-  g.add(torso);
-  const head = new THREE.Mesh(new THREE.SphereGeometry(0.3, 10, 8), skin);
-  head.position.y = 1.95;
-  g.add(head);
-  const legL = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.8, 0.34), pants);
-  legL.position.set(-0.2, 0.4, 0);
-  g.add(legL);
-  const legR = legL.clone();
-  legR.position.x = 0.2;
-  g.add(legR);
-  g.userData = { legL, legR };
+  const shirt = new THREE.MeshLambertMaterial({ color: pickRandom(rng, [0xe8e8e8, 0x3f6fb5, 0xc2a23e, 0x7a4a8f, 0x4a9f6b, 0xd86a8a]) });
+  const pants = new THREE.MeshLambertMaterial({ color: 0x232830 });
+  const skin = new THREE.MeshLambertMaterial({ color: pickRandom(rng, [0xc98d64, 0x8a5a3b, 0xe8b98a]) });
+  const body = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.95, 0.42), shirt);
+  body.position.y = 1.0;
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.26, 8, 7), skin);
+  head.position.y = 1.72;
+  const legL = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.75, 0.28), pants);
+  legL.position.set(-0.17, 0.38, 0);
+  const legR = legL.clone(); legR.position.x = 0.17;
+  g.add(body, head, legL, legR);
+  g.userData.legL = legL; g.userData.legR = legR;
   return g;
 }
 
-// A rectangular loop around one city block, on the road centre lines.
-function blockLoop(cx, cz) {
-  const r = 20;
-  return [
-    { x: cx - r, z: cz - r }, { x: cx + r, z: cz - r },
-    { x: cx + r, z: cz + r }, { x: cx - r, z: cz + r },
-  ];
-}
+export class Traffic {
+  constructor(scene, rng, city) {
+    this.scene = scene;
+    this.rng = rng;
+    this.city = city;
+    this.cars = [];
+    this.peds = [];
+    this.gunfireAt = null; // {x, z, at} — pedestrians flee from the last shot
 
-export function initTraffic(G) {
-  G.trafficCars = [];
-  const blocks = [];
-  for (let bx = -160; bx <= 160; bx += 40) {
-    for (let bz = -160; bz <= 160; bz += 40) blocks.push([bx, bz]);
-  }
-  for (let i = 0; i < 10; i++) {
-    const [bx, bz] = blocks[i * 7 % blocks.length];
-    const route = blockLoop(bx, bz);
-    const start = route[i % 4];
-    const mesh = makeCarMesh(TRAFFIC_COLORS[i % TRAFFIC_COLORS.length], 'sedan');
-    mesh.position.set(start.x, 0, start.z);
-    G.scene.add(mesh);
-    const car = {
-      mesh, kind: 'sedan', speed: 8, parked: false, driver: 'traffic',
-      route, wp: (i + 1) % 4, maxSpeed: 9,
-    };
-    mesh.userData.car = car;
-    linkCar(car);
-    G.trafficCars.push(car);
-  }
-
-  G.peds = [];
-  for (let i = 0; i < 14; i++) {
-    const mesh = makePedMesh(SHIRT_COLORS[i % SHIRT_COLORS.length]);
-    const x = rand(-180, 180);
-    const z = rand(-180, 180);
-    mesh.position.set(x, 0, z);
-    G.scene.add(mesh);
-    G.peds.push({
-      mesh, speed: 1.6, target: null, fleeUntil: 0, dead: false,
-      walkPhase: rand(0, Math.PI * 2), state: 'walk',
-    });
-  }
-}
-
-function pedTarget(G, ped) {
-  // New sidewalk target near the ped's current block.
-  const bx = Math.round(ped.mesh.position.x / 40) * 40;
-  const bz = Math.round(ped.mesh.position.z / 40) * 40;
-  return { x: bx + rand(-16, 16), z: bz + rand(-16, 16) };
-}
-
-export function scarePeds(G, x, z, radius) {
-  for (const ped of G.peds) {
-    if (ped.dead) continue;
-    const d = Math.hypot(ped.mesh.position.x - x, ped.mesh.position.z - z);
-    if (d < radius) ped.fleeUntil = G.time + 3;
-  }
-}
-
-export function updateTraffic(G, dt) {
-  const playerPos = G.inCar && G.playerCar ? G.playerCar.mesh.position : G.playerMesh.position;
-  const playerSpeed = G.inCar && G.playerCar ? Math.abs(G.playerCar.speed) : 0;
-
-  for (const car of G.trafficCars) {
-    const wp = car.route[car.wp];
-    const dx = wp.x - car.mesh.position.x;
-    const dz = wp.z - car.mesh.position.z;
-    const d = Math.hypot(dx, dz);
-    if (d < 3) {
-      car.wp = (car.wp + 1) % car.route.length;
-      continue;
+    // 10 AI cars, each looping the rectangle of roads around one block
+    const blocks = [];
+    for (const bx of blockCenters()) for (const bz of blockCenters()) blocks.push([bx, bz]);
+    for (let i = 0; i < 10; i++) {
+      const [bx, bz] = blocks[Math.floor(rng() * blocks.length)];
+      const color = CAR_COLORS[Math.floor(rng() * CAR_COLORS.length)];
+      const mesh = makeCarMesh(color, false);
+      scene.add(mesh);
+      const loop = [
+        { x: bx - 30, z: bz - 30 }, { x: bx + 30, z: bz - 30 },
+        { x: bx + 30, z: bz + 30 }, { x: bx - 30, z: bz + 30 },
+      ];
+      const car = new Car(mesh, loop[0].x, loop[0].z, 0, { topSpeed: 13 });
+      this.cars.push({ car, loop, wp: 1, speed: 8 + rng() * 4, stopped: 0 });
     }
-    // Stop-and-go: brake if another car is right ahead.
-    let blocked = false;
-    for (const other of [...G.trafficCars, ...G.cars]) {
-      if (other === car) continue;
-      const odx = other.mesh.position.x - car.mesh.position.x;
-      const odz = other.mesh.position.z - car.mesh.position.z;
-      const od = Math.hypot(odx, odz);
-      if (od < 7 && odx * dx + odz * dz > 0) { blocked = true; break; }
+
+    // 14 pedestrians strolling the sidewalks
+    for (let i = 0; i < 14; i++) {
+      const mesh = makePedestrianMesh(rng);
+      scene.add(mesh);
+      const r = roadCenters()[Math.floor(rng() * roadCenters().length)];
+      const along = -250 + rng() * 500;
+      const side = rng() < 0.5 ? -1 : 1;
+      const onVertical = rng() < 0.5;
+      const pos = onVertical
+        ? { x: r + side * 10.5, z: along }
+        : { x: along, z: r + side * 10.5 };
+      this.peds.push({
+        mesh, pos: new THREE.Vector3(pos.x, 0, pos.z),
+        heading: rng() * Math.PI * 2, speed: 1.1 + rng() * 0.8,
+        fleeUntil: 0, phase: rng() * 6,
+      });
     }
-    const targetSpeed = blocked ? 0 : 8;
-    car.speed += (targetSpeed - car.speed) * Math.min(1, dt * 2);
-    const yaw = Math.atan2(dx, dz);
-    car.mesh.rotation.y = yaw;
-    car.mesh.position.x += Math.sin(yaw) * car.speed * dt;
-    car.mesh.position.z += Math.cos(yaw) * car.speed * dt;
-    for (const w of car.mesh.userData.wheels) w.rotation.x += car.speed * dt * 1.2;
   }
 
-  for (const ped of G.peds) {
-    if (ped.dead) continue;
-    const m = ped.mesh;
-    const fleeing = G.time < ped.fleeUntil;
-    let tx, tz, speed;
-    if (fleeing) {
-      // Run away from the player.
-      const dx = m.position.x - playerPos.x;
-      const dz = m.position.z - playerPos.z;
-      const d = Math.hypot(dx, dz) || 1;
-      tx = m.position.x + (dx / d) * 20;
-      tz = m.position.z + (dz / d) * 20;
-      speed = 4.2;
-    } else {
-      if (!ped.target || Math.hypot(ped.target.x - m.position.x, ped.target.z - m.position.z) < 2) {
-        ped.target = pedTarget(G, ped);
+  reportGunfire(x, z, now) { this.gunfireAt = { x, z, at: now }; }
+
+  update(dt, now, playerPos, playerSpeed, allCars) {
+    // ---- AI cars: follow their loop, stop for the car ahead ----
+    for (const t of this.cars) {
+      const target = t.loop[t.wp];
+      const d = dist2(t.car.pos.x, t.car.pos.z, target.x, target.z);
+      if (d < 6) t.wp = (t.wp + 1) % t.loop.length;
+      // stop if another car is close ahead
+      let blocked = false;
+      for (const other of allCars) {
+        if (other === t.car) continue;
+        const dd = dist2(t.car.pos.x, t.car.pos.z, other.pos.x, other.pos.z);
+        if (dd < 11) {
+          const fx = Math.sin(t.car.heading), fz = Math.cos(t.car.heading);
+          const dot = (other.pos.x - t.car.pos.x) * fx + (other.pos.z - t.car.pos.z) * fz;
+          if (dot > 0) { blocked = true; break; }
+        }
       }
-      tx = ped.target.x;
-      tz = ped.target.z;
-      speed = ped.speed;
+      t.stopped = blocked ? t.stopped + dt : 0;
+      const want = blocked ? 0 : t.speed;
+      t.car.steerToward(dt, t.loop[t.wp].x, t.loop[t.wp].z, want, this.city);
     }
-    const dx = tx - m.position.x;
-    const dz = tz - m.position.z;
-    const d = Math.hypot(dx, dz);
-    if (d > 0.1) {
-      const yaw = Math.atan2(dx, dz);
-      m.rotation.y = yaw;
-      const nx = m.position.x + Math.sin(yaw) * speed * dt;
-      const nz = m.position.z + Math.cos(yaw) * speed * dt;
-      const fixed = resolveCircle(G, nx, nz, 0.7);
-      m.position.x = fixed.x;
-      m.position.z = fixed.z;
-      ped.walkPhase += dt * (fleeing ? 14 : 8);
-      const swing = Math.sin(ped.walkPhase) * 0.5;
-      m.userData.legL.rotation.x = swing;
-      m.userData.legR.rotation.x = -swing;
-    }
-    // Flee from a speeding player car nearby even without a gunshot.
-    if (playerSpeed > 10) {
-      const pd = Math.hypot(m.position.x - playerPos.x, m.position.z - playerPos.z);
-      if (pd < 8) ped.fleeUntil = G.time + 2;
+
+    // ---- pedestrians: stroll, turn at intersections, flee danger ----
+    for (const p of this.peds) {
+      let fleeing = now < p.fleeUntil;
+      if (this.gunfireAt && now - this.gunfireAt.at < 4) {
+        if (dist2(p.pos.x, p.pos.z, this.gunfireAt.x, this.gunfireAt.z) < 55) {
+          p.fleeUntil = now + 3; fleeing = true;
+        }
+      }
+      if (!fleeing && playerSpeed > 12) {
+        if (dist2(p.pos.x, p.pos.z, playerPos.x, playerPos.z) < 9) {
+          p.fleeUntil = now + 2.5; fleeing = true;
+        }
+      }
+      if (fleeing) {
+        // run away from the threat
+        const tx = this.gunfireAt && now - this.gunfireAt.at < 4 ? this.gunfireAt.x : playerPos.x;
+        const tz = this.gunfireAt && now - this.gunfireAt.at < 4 ? this.gunfireAt.z : playerPos.z;
+        p.heading = Math.atan2(p.pos.x - tx, p.pos.z - tz);
+        p.pos.x += Math.sin(p.heading) * 5 * dt;
+        p.pos.z += Math.cos(p.heading) * 5 * dt;
+      } else {
+        // stroll along the sidewalk; turn at random at intersections
+        p.pos.x += Math.sin(p.heading) * p.speed * dt;
+        p.pos.z += Math.cos(p.heading) * p.speed * dt;
+        if (Math.abs(p.pos.x) > 262 || Math.abs(p.pos.z) > 262) p.heading += Math.PI;
+        if (this.rng() < dt * 0.05) p.heading += (this.rng() - 0.5) * 1.2;
+        // stay near a sidewalk line: nudge back toward the nearest road offset
+        const roads = roadCenters();
+        let best = null, bestD = 1e9;
+        for (const r of roads) {
+          const d1 = Math.abs(Math.abs(p.pos.x - (r + 10.5)) - 0);
+          const d2 = Math.abs(Math.abs(p.pos.z - (r + 10.5)) - 0);
+          if (d1 < bestD) { bestD = d1; best = { axis: 'x', v: r + 10.5 }; }
+          if (d2 < bestD) { bestD = d2; best = { axis: 'z', v: r + 10.5 }; }
+        }
+        if (best && bestD < 6) {
+          if (best.axis === 'x') p.pos.x += (best.v - p.pos.x) * Math.min(1, dt * 0.5);
+          else p.pos.z += (best.v - p.pos.z) * Math.min(1, dt * 0.5);
+        }
+      }
+      p.pos.x = Math.max(-268, Math.min(268, p.pos.x));
+      p.pos.z = Math.max(-268, Math.min(268, p.pos.z));
+      p.phase += dt * (fleeing ? 11 : 5);
+      const swing = Math.sin(p.phase) * 0.45;
+      p.mesh.userData.legL.rotation.x = swing;
+      p.mesh.userData.legR.rotation.x = -swing;
+      p.mesh.position.copy(p.pos);
+      p.mesh.rotation.y = p.heading;
     }
   }
 }

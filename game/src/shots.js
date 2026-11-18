@@ -1,73 +1,86 @@
-// SOLMAR CITY — screenshot staging. The capture scripts load the game with
-// ?shot=<name>; each name stages a real gameplay state (never a fake frame):
-// the player, cars, police and mission are all live in the scene.
-import { LANDMARKS } from './city.js';
-import { jumpToMission } from './missions.js';
-import { makeCarMesh } from './vehicles.js';
+// Solmar City — staged screenshots (?shot=): deterministic setups that skip
+// the menu and place the game state directly, so each screenshot shows a
+// different system at its best.
+import { dist2 } from './util.js';
 
-export function applyShotStaging(G, shot) {
-  if (!shot || shot === 'menu') return; // menu shot: stay on the start screen
-  G.staging = shot;
-  G.startGame();
-
-  if (shot === 'street') {
-    // On foot on Palm Row, a stealable sedan a few steps away, mission 1.
-    G.playerMesh.position.set(9, 0, 143);
-    G.playerMesh.rotation.y = 0.3;
-    G.camYaw = 0.2;
-    G.camPitch = 0.28;
+export function applyShot(name, G) {
+  const S = G.city.shops;
+  if (name === 'menu') {
+    // start screen over the live city; the menu camera orbits slowly (main.js)
+    G.state = 'menu';
+    G.menuOrbit = true;
     return;
   }
 
-  if (shot === 'cover') {
-    // Driving chase down Palm Row: the player car drives itself west toward
-    // Sunset Garage, two police cars closing from behind on the same road,
-    // a taxi ahead, wanted 2 stars, mission marker on the garage.
-    const car = G.cars[0];
-    car.mesh.position.set(0, 0, 140);
-    car.mesh.rotation.y = -Math.PI / 2;
-    G.vehicles.enterCar(G, car);
-    G.police.wanted = 2;
-    G.hud.updateStars();
-    G.audio.setSiren(true);
-    jumpToMission(G, 0);
-    G.missions.step = 1; // already stolen — now deliver to the garage
-    G.missions.startMissionStep(G);
-    // Two police cars trailing the player, offset to either side of the road.
-    for (const [px, pz] of [[20, 136], [32, 144]]) {
-      const cop = makeCarMesh(0xf0f0f0, 'cop');
-      cop.position.set(px, 0, pz);
-      cop.rotation.y = -Math.PI / 2;
-      G.scene.add(cop);
-      G.policeCars.push({ mesh: cop, kind: 'cop', speed: 14, parked: false, driver: 'police', maxSpeed: 30, hitCooldown: 0 });
-    }
-    // A parked taxi ahead on the roadside for depth.
-    const taxi = G.cars[2];
-    taxi.mesh.position.set(-50, 0, 146);
-    taxi.mesh.rotation.y = -Math.PI / 2;
-    G.camYaw = -Math.PI / 2;
-    G.camPitch = 0.3;
-    return;
-  }
+  // every gameplay shot starts playing, menu skipped
+  G.state = 'playing';
+  G.hud.showHud(true);
+  G.hud.hideOverlays();
 
-  if (shot === 'mission') {
-    // Heist in progress: player on foot at Sunset Liquor's doorway with
-    // pistol out, a foot cop closing in from the right, wanted 2 stars.
-    // Three-quarter camera so player, shop sign and cop share the frame.
-    jumpToMission(G, 4);
-    const shop = LANDMARKS.shops[0];
-    G.playerMesh.position.set(shop.x, 0, shop.z + 9);
-    G.playerMesh.rotation.y = Math.PI;
-    G.player.yaw = Math.PI;
-    G.camYaw = Math.PI - 0.6;
-    G.camPitch = 0.45;
-    G.police.wanted = 2;
-    G.hud.updateStars();
-    G.audio.setSiren(true);
-    const cop = G.police.spawnFootCop(G, G.playerMesh.position);
-    if (cop) {
-      cop.mesh.position.set(shop.x + 16, 0, shop.z + 18);
-    }
-    return;
+  if (name === 'cover') {
+    // driving chase: player car with two police cars behind, wanted 2, mission 1 live
+    G.missions.setMission(0);
+    G.missions.phase = 1;
+    G.missions.updateTarget();
+    G.wanted = 2;
+    G.money = 0;
+    const car = G.spawnPlayerCar(-30, 40, Math.PI, 0xc23b2e);
+    car.speed = 0; // staged still: the player car and both police cars hold
+    G.player.inCar = true; // position, so the framing is fully controlled and
+    G.playerCar = car;     // no ram lands before the screenshot
+    G.player.health = 100;
+    G.player.lastDamageAt = -99;
+    G.police.syncToWanted(2, G.player.pos);
+    // police right behind the player car (6 m and 9 m back, flanking it),
+    // held in place — with the 15 m chase camera they read large at the
+    // bottom of the frame, the player car ahead of them
+    G.police.cars.forEach((pc, i) => {
+      pc.pos.set(-30 + (i === 0 ? -3 : 3), 0, 46 + i * 3);
+      pc.heading = Math.PI;
+      pc.speed = 0;
+      pc.hold = true;
+      pc.syncMesh();
+    });
+    // slightly higher, further chase camera so the whole chase reads
+    G.shotCam = { dist: 15, pitch: 0.42 };
+    G.cameraYaw = Math.PI;
+    G.cameraPitch = 0.42;
+  } else if (name === 'street') {
+    // on foot beside a stealable car, steal prompt showing
+    G.missions.setMission(0);
+    G.wanted = 0;
+    G.player.inCar = false;
+    G.playerCar = null;
+    G.player.setPosition(86, 21, Math.PI * 0.9);
+    // beacon marks the stealable parked sedan right next to the player
+    G.missions.target = { x: 86, z: 18 };
+    G.cameraYaw = Math.PI * 0.85;
+    G.cameraPitch = 0.35;
+  } else if (name === 'mission') {
+    // heist at Sunset Liquor: pistol out, a foot cop closing in, wanted 2
+    G.missions.setMission(4);
+    G.missions.robbed = new Set();
+    G.missions.updateTarget();
+    G.wanted = 2;
+    G.player.inCar = false;
+    G.playerCar = null;
+    const L = S.liquor.pos;
+    G.player.setPosition(L.x + 2, L.z + 3, -Math.PI / 2);
+    G.police.syncToWanted(2, G.player.pos);
+    // one foot cop ~16 m west along the street, in view and closing in —
+    // far enough that it cannot reach the player (and the camera) before
+    // the screenshot, close enough to read as a threat
+    G.police.cops = [];
+    G.police.spawnFootCopAt(L.x - 14, L.z + 4);
+    G.player.health = 100;
+    G.player.lastDamageAt = -99;
+    G.cameraYaw = -Math.PI / 2 + 0.5;
+    G.cameraPitch = 0.42;
   }
+  // keep the wanted-sync in the main loop from re-spawning / removing the staged police
+  G.lastWanted = G.wanted;
+  G.hud.update(G, 0.1);
 }
+
+// Distance helper used by the playtest steering loop (kept here for reuse).
+export function distanceTo(a, b) { return dist2(a.x, a.z, b.x, b.z); }

@@ -1,208 +1,194 @@
-// SOLMAR CITY — the story: five jobs for fixer Mara Voss, from stealing a
-// car to a three-shop heist. Each mission is steps with a beacon, a HUD
-// objective, and a cash reward; finishing all five crowns the player
-// "King of Solmar" and opens free roam.
+// Solmar City — the five-job story chain: Jax Marlowe pays off his $50,000 debt
+// to Mara Voss, one job at a time. Each mission has a beacon, a minimap blip and
+// a live HUD banner with the distance to the target.
 import * as THREE from 'three';
-import { LANDMARKS } from './city.js';
-import { clamp } from './util.js';
+import { dist2 } from './util.js';
 
-const REWARDS = [500, 800, 1000, 1500, 3000];
-const NAMES = ['Hot Wheels', 'The Pickup', 'Lose the Heat', 'Coastal Run', 'Three-Shop Heist'];
-const ROB_TIME = 3;
+export const MISSION_DEFS = [
+  { name: 'Hot Wheels', reward: 500, desc: 'Steal a car — any car on Palm Row' },
+  { name: 'The Pickup', reward: 750, desc: 'Collect the package at the docks' },
+  { name: 'Lose the Heat', reward: 1000, desc: 'Reach 3 stars, then lose the cops' },
+  { name: 'Coastal Run', reward: 1500, desc: 'Timed checkpoints along the coast' },
+  { name: 'Three-Shop Heist', reward: 3000, desc: 'Rob 3 shops, then escape to Mara' },
+];
 
-function buildMissions() {
-  const shops = LANDMARKS.shops;
-  return [
-    {
-      name: NAMES[0],
-      steps: [
-        { text: 'Steal a car — any car on Palm Row', target: { x: 10, z: 146 }, radius: 5, type: 'steal' },
-        { text: 'Deliver the car to Sunset Garage', target: LANDMARKS.garage, radius: 14, type: 'arrive' },
-      ],
-    },
-    {
-      name: NAMES[1],
-      steps: [
-        { text: 'Pick up the package at Neon Palms Club', target: LANDMARKS.club, radius: 9, type: 'arrive' },
-      ],
-    },
-    {
-      name: NAMES[2],
-      steps: [
-        { text: 'Lose the cops — get your wanted level to zero', target: null, radius: 0, type: 'loseHeat' },
-      ],
-      onStart(G) { G.police.addWanted(G, 3); },
-    },
-    {
-      name: NAMES[3],
-      steps: LANDMARKS.checkpoints.map((c, i) => ({
-        text: `Coastal Run — reach checkpoint ${i + 1} of 3`,
-        target: c, radius: 12, type: 'arrive',
-      })),
-    },
-    {
-      name: NAMES[4],
-      steps: [
-        ...shops.map((s) => ({
-          text: `Rob ${s.name} — stand in the doorway`,
-          target: s, radius: 7, type: 'rob',
-        })),
-        { text: 'Getaway! Reach Sunset Garage', target: LANDMARKS.garage, radius: 14, type: 'arrive' },
-      ],
-    },
-  ];
-}
+export class Missions {
+  constructor(scene, city, callbacks) {
+    this.scene = scene;
+    this.city = city;
+    this.cb = callbacks; // {onComplete(mission, reward), onToast(text, kind), onPickup(), onRobbery(shop)}
+    this.index = 0;       // current mission (0..4); 5 = story done
+    this.phase = 0;       // sub-step inside the current mission
+    this.completed = [];
+    this.target = null;   // {x, z} or null
+    this.robbed = new Set();
+    this.robProgress = 0;
+    this.robShop = null;
+    this.coastTimer = 0;
+    this.coastWp = 0;
+    this.coastPoints = [
+      { x: -240, z: 282 }, { x: -60, z: 282 }, { x: 120, z: 282 }, { x: 240, z: 282 },
+    ];
+    this.evadeSeen3 = false;
+    this.finished = false;
 
-export function initMissions(G) {
-  const beaconMat = new THREE.MeshBasicMaterial({
-    color: 0xffd23e, transparent: true, opacity: 0.55, side: THREE.DoubleSide,
-    depthWrite: false,
-  });
-  const beacon = new THREE.Group();
-  const pillar = new THREE.Mesh(new THREE.CylinderGeometry(1.6, 1.6, 60, 12, 1, true), beaconMat);
-  pillar.position.y = 30;
-  beacon.add(pillar);
-  const ring = new THREE.Mesh(
-    new THREE.RingGeometry(2.5, 4, 24),
-    new THREE.MeshBasicMaterial({ color: 0xffd23e, transparent: true, opacity: 0.8, side: THREE.DoubleSide }),
-  );
-  ring.rotation.x = -Math.PI / 2;
-  ring.position.y = 0.15;
-  beacon.add(ring);
-  beacon.visible = false;
-  G.scene.add(beacon);
-
-  G.missions = {
-    list: buildMissions(),
-    index: 0,
-    step: 0,
-    beacon,
-    robTimer: 0,
-    freeRoam: false,
-  };
-  startMissionStep(G);
-}
-
-export function missionName(G) {
-  return G.missions.freeRoam ? 'King of Solmar' : G.missions.list[G.missions.index].name;
-}
-
-function currentStep(G) {
-  if (G.missions.freeRoam) return null;
-  return G.missions.list[G.missions.index].steps[G.missions.step];
-}
-
-export function currentObjective(G) {
-  const step = currentStep(G);
-  if (!step) return { text: 'Free roam — King of Solmar. The city is yours.', target: null };
-  return { text: `${missionName(G)}: ${step.text}`, target: step.target ?? null };
-}
-
-export function startMissionStep(G) {
-  const m = G.missions;
-  m.robTimer = 0;
-  const step = currentStep(G);
-  if (step && step.target) {
-    m.beacon.position.set(step.target.x, 0, step.target.z);
-    m.beacon.visible = true;
-  } else {
-    m.beacon.visible = false;
+    // beacon: a pulsing light cylinder + ground ring at the target
+    this.beacon = new THREE.Group();
+    const cyl = new THREE.Mesh(
+      new THREE.CylinderGeometry(2.2, 2.2, 60, 16, 1, true),
+      new THREE.MeshBasicMaterial({ color: 0xffd34d, transparent: true, opacity: 0.22, side: THREE.DoubleSide, depthWrite: false })
+    );
+    cyl.position.y = 30;
+    const ring = new THREE.Mesh(
+      new THREE.RingGeometry(3.2, 4.6, 24),
+      new THREE.MeshBasicMaterial({ color: 0xffd34d, transparent: true, opacity: 0.85, side: THREE.DoubleSide })
+    );
+    ring.rotation.x = -Math.PI / 2; ring.position.y = 0.15;
+    this.beacon.add(cyl, ring);
+    this.beacon.visible = false;
+    scene.add(this.beacon);
+    this.setMission(0);
   }
-  if (step && step.type === 'loseHeat') {
-    const mission = m.list[m.index];
-    if (mission.onStart) mission.onStart(G);
+
+  get current() { return this.index < MISSION_DEFS.length ? MISSION_DEFS[this.index] : null; }
+  get done() { return this.index >= MISSION_DEFS.length; }
+
+  setMission(i) {
+    this.index = i;
+    this.phase = 0;
+    this.robbed = new Set();
+    this.robProgress = 0;
+    this.robShop = null;
+    this.evadeSeen3 = false;
+    this.coastWp = 0;
+    this.coastTimer = 0;
+    if (i >= MISSION_DEFS.length) { this.target = null; this.finished = true; return; }
+    this.updateTarget();
   }
-}
 
-function completeMission(G) {
-  const m = G.missions;
-  const reward = REWARDS[m.index];
-  G.cash += reward;
-  G.hud.toast(`Job done: ${m.list[m.index].name} — +$${reward}`, 'gold');
-  G.audio.missionDone();
-  m.index += 1;
-  m.step = 0;
-  if (m.index >= m.list.length) {
-    m.freeRoam = true;
-    m.beacon.visible = false;
-    G.hud.toast('KING OF SOLMAR — all five jobs done. The city is yours.', 'gold');
-  } else {
-    G.hud.toast(`New job: ${m.list[m.index].name}`);
-    startMissionStep(G);
-  }
-  G.saveGame();
-}
-
-function advanceStep(G) {
-  const m = G.missions;
-  m.step += 1;
-  m.robTimer = 0;
-  if (m.step >= m.list[m.index].steps.length) {
-    completeMission(G);
-  } else {
-    startMissionStep(G);
-  }
-}
-
-export function onCarEntered(G) {
-  const step = currentStep(G);
-  if (step && step.type === 'steal') advanceStep(G);
-}
-
-// Jump straight to a mission (used by screenshot staging).
-export function jumpToMission(G, index) {
-  const m = G.missions;
-  m.index = clamp(index, 0, m.list.length - 1);
-  m.step = 0;
-  m.freeRoam = false;
-  startMissionStep(G);
-}
-
-export function updateMissions(G, dt) {
-  const m = G.missions;
-  if (G.state !== 'playing' || m.freeRoam) return;
-  const step = currentStep(G);
-  if (!step) return;
-
-  // Beacon pulse.
-  const pulse = 1 + Math.sin(G.time * 3) * 0.12;
-  m.beacon.scale.set(pulse, 1, pulse);
-
-  if (step.type === 'loseHeat') {
-    if (G.police.wanted === 0) {
-      G.hud.toast('Clean. No heat, no tail.');
-      advanceStep(G);
+  updateTarget() {
+    const S = this.city.shops;
+    if (this.index === 0) this.target = this.phase === 0 ? null : { x: S.garage.pos.x, z: S.garage.pos.z };
+    else if (this.index === 1) this.target = this.phase === 0 ? { x: S.docks.pos.x, z: S.docks.pos.z } : { x: S.maras.pos.x, z: S.maras.pos.z };
+    else if (this.index === 2) this.target = null;
+    else if (this.index === 3) this.target = this.coastPoints[this.coastWp];
+    else if (this.index === 4) {
+      if (this.robbed.size < 3) {
+        const next = ['liquor', 'palmRow', 'coastMart'].find((k) => !this.robbed.has(k));
+        this.target = next ? { x: S[next].pos.x, z: S[next].pos.z } : null;
+      } else this.target = { x: S.maras.pos.x, z: S.maras.pos.z };
     }
-    return;
   }
-  if (!step.target) return;
-  const pos = G.inCar && G.playerCar ? G.playerCar.mesh.position : G.playerMesh.position;
-  const d = Math.hypot(step.target.x - pos.x, step.target.z - pos.z);
 
-  if (step.type === 'rob') {
-    if (d <= step.radius && !G.inCar) {
-      m.robTimer += dt;
-      G.hud.showRobProgress(m.robTimer / ROB_TIME);
-      if (m.robTimer >= ROB_TIME) {
-        G.hud.showRobProgress(0);
-        G.cash += 500;
-        G.police.addWanted(G, 1);
-        G.audio.pickup();
-        G.hud.toast(`Robbed ${step.target.name}! +$500 — and the alarm is screaming.`, 'gold');
-        advanceStep(G);
+  // Human-readable banner line for the current step.
+  bannerText() {
+    if (this.done) return 'Solmar City is yours — free roam';
+    const m = MISSION_DEFS[this.index];
+    if (this.index === 0) return this.phase === 0
+      ? 'Hot Wheels: Steal a car — any car on Palm Row'
+      : 'Hot Wheels: Deliver the car to Sunset Garage';
+    if (this.index === 1) return this.phase === 0
+      ? 'The Pickup: Drive to the docks and collect the package'
+      : 'The Pickup: Take the package back to Mara\'s office';
+    if (this.index === 2) return this.evadeSeen3
+      ? 'Lose the Heat: Stay out of sight — lose the cops!'
+      : 'Lose the Heat: Get to 3 stars — steal, shoot, make noise';
+    if (this.index === 3) return `Coastal Run: Checkpoint ${this.coastWp + 1} of 4 — ${Math.max(0, Math.ceil(this.coastTimer))}s left`;
+    if (this.index === 4) {
+      if (this.robbed.size < 3) {
+        const next = ['liquor', 'palmRow', 'coastMart'].find((k) => !this.robbed.has(k));
+        const name = { liquor: 'Sunset Liquor', palmRow: 'Palm Row', coastMart: 'Coast Mart' }[next];
+        return `Three-Shop Heist: Rob ${name} — stand in the doorway (${this.robbed.size}/3 done)`;
       }
-    } else {
-      if (m.robTimer > 0) G.hud.showRobProgress(0);
-      m.robTimer = 0;
+      return 'Three-Shop Heist: Escape — get to Mara\'s office!';
     }
-    return;
+    return m.desc;
   }
 
-  // arrive / steal steps complete on proximity (steal also completes on entry).
-  if (d <= step.radius) {
-    if (step.type === 'arrive') {
-      G.audio.pickup();
-      advanceStep(G);
+  completeMission() {
+    const m = MISSION_DEFS[this.index];
+    this.completed.push(this.index);
+    if (this.cb.onComplete) this.cb.onComplete(m, m.reward);
+    this.setMission(this.index + 1);
+    if (this.done && this.cb.onStoryComplete) this.cb.onStoryComplete();
+  }
+
+  // Events the game feeds in: stealing a car, arriving somewhere, wanted changes.
+  onCarStolen() {
+    if (this.index === 0 && this.phase === 0) {
+      this.phase = 1;
+      this.updateTarget();
+      if (this.cb.onToast) this.cb.onToast('Car stolen — deliver it to Sunset Garage!', 'gold');
+    }
+  }
+
+  update(dt, G) {
+    if (this.done || G.state !== 'playing') return;
+    const px = G.playerCar ? G.playerCar.pos.x : G.player.pos.x;
+    const pz = G.playerCar ? G.playerCar.pos.z : G.player.pos.z;
+
+    if (this.index === 0 && this.phase === 1) {
+      if (dist2(px, pz, this.target.x, this.target.z) < 12 && G.playerCar) this.completeMission();
+    } else if (this.index === 1) {
+      if (this.phase === 0 && dist2(px, pz, this.target.x, this.target.z) < 10) {
+        this.phase = 1; this.updateTarget();
+        if (this.cb.onPickup) this.cb.onPickup();
+        if (this.cb.onToast) this.cb.onToast('Package collected — take it to Mara\'s!', 'gold');
+      } else if (this.phase === 1 && dist2(px, pz, this.target.x, this.target.z) < 10) {
+        this.completeMission();
+      }
+    } else if (this.index === 2) {
+      if (!this.evadeSeen3 && G.wanted >= 3) {
+        this.evadeSeen3 = true;
+        if (this.cb.onToast) this.cb.onToast('3 stars! Now lose them — stay out of sight!', 'gold');
+      } else if (this.evadeSeen3 && G.wanted === 0) {
+        this.completeMission();
+      }
+    } else if (this.index === 3) {
+      if (this.phase === 0) { this.phase = 1; this.coastTimer = 90; }
+      this.coastTimer -= dt;
+      if (this.target && dist2(px, pz, this.target.x, this.target.z) < 12) {
+        this.coastWp += 1;
+        if (this.coastWp >= this.coastPoints.length) { this.completeMission(); return; }
+        this.updateTarget();
+        if (this.cb.onToast) this.cb.onToast(`Checkpoint ${this.coastWp} of 4!`, 'gold');
+      }
+      if (this.coastTimer <= 0) {
+        this.coastTimer = 90; this.coastWp = 0; this.updateTarget();
+        if (this.cb.onToast) this.cb.onToast('Out of time — the coastal run restarts!', '');
+      }
+    } else if (this.index === 4) {
+      if (this.robbed.size < 3) {
+        // hold-up: stand in the doorway of the next shop (on foot)
+        const next = ['liquor', 'palmRow', 'coastMart'].find((k) => !this.robbed.has(k));
+        const shop = this.city.shops[next];
+        const onFoot = !G.playerCar;
+        if (onFoot && dist2(G.player.pos.x, G.player.pos.z, shop.pos.x, shop.pos.z) < 5) {
+          this.robShop = next;
+          this.robProgress += dt / 3;
+          if (this.robProgress >= 1) {
+            this.robbed.add(next);
+            this.robProgress = 0; this.robShop = null;
+            if (this.cb.onRobbery) this.cb.onRobbery(shop.name);
+            this.updateTarget();
+          }
+        } else {
+          this.robShop = null;
+          this.robProgress = Math.max(0, this.robProgress - dt / 2);
+        }
+      } else if (dist2(px, pz, this.target.x, this.target.z) < 10) {
+        this.completeMission();
+      }
+    }
+
+    // beacon follows the target and pulses
+    if (this.target) {
+      this.beacon.visible = true;
+      this.beacon.position.set(this.target.x, 0, this.target.z);
+      const s = 1 + Math.sin(performance.now() * 0.004) * 0.12;
+      this.beacon.scale.set(s, 1, s);
+    } else {
+      this.beacon.visible = false;
     }
   }
 }

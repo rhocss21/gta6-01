@@ -1,64 +1,29 @@
-// SOLMAR CITY — small shared helpers (no game logic here, only math + DOM bits).
-import * as THREE from 'three';
-
-export function clamp(v, lo, hi) {
-  return v < lo ? lo : v > hi ? hi : v;
-}
-
-export function lerp(a, b, t) {
-  return a + (b - a) * t;
-}
-
-// Shortest-arc interpolation between two headings (radians).
-export function lerpAngle(a, b, t) {
-  let d = (b - a) % (Math.PI * 2);
-  if (d > Math.PI) d -= Math.PI * 2;
-  if (d < -Math.PI) d += Math.PI * 2;
-  return a + d * t;
-}
-
-export function rand(a, b) {
-  return a + Math.random() * (b - a);
-}
-
-export function randi(a, b) {
-  return Math.floor(rand(a, b + 1));
-}
-
-export function pick(arr) {
-  return arr[Math.floor(Math.random() * arr.length)];
-}
-
-export function dist2D(ax, az, bx, bz) {
-  const dx = ax - bx;
-  const dz = az - bz;
-  return Math.sqrt(dx * dx + dz * dz);
-}
-
-// Deterministic PRNG (mulberry32) so the city layout is stable per seed.
+// Solmar City — small shared helpers: seeded random, math, formatting.
 export function mulberry32(seed) {
-  let s = seed >>> 0;
-  return function next() {
-    s = (s + 0x6d2b79f5) >>> 0;
-    let t = s;
-    t = Math.imul(t ^ (t >>> 15), t | 1);
-    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+  let a = seed >>> 0;
+  return function nextRandom() {
+    a |= 0; a = (a + 0x6D2B79F5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
     return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
   };
 }
 
-// A canvas texture painted by a callback: used for building windows, road
-// markings and the beach, so the city needs no image assets at all.
-export function canvasTexture(w, h, painter) {
-  const c = document.createElement('canvas');
-  c.width = w;
-  c.height = h;
-  painter(c.getContext('2d'), w, h);
-  const tex = new THREE.CanvasTexture(c);
-  tex.colorSpace = THREE.SRGBColorSpace;
-  return tex;
+export function clamp(v, lo, hi) { return v < lo ? lo : v > hi ? hi : v; }
+export function lerp(a, b, t) { return a + (b - a) * t; }
+export function dist2(ax, az, bx, bz) { const dx = ax - bx, dz = az - bz; return Math.sqrt(dx * dx + dz * dz); }
+export function angleDiff(a, b) {
+  let d = (a - b) % (Math.PI * 2);
+  if (d > Math.PI) d -= Math.PI * 2;
+  if (d < -Math.PI) d += Math.PI * 2;
+  return d;
 }
-
-export function el(id) {
-  return document.getElementById(id);
+export function fmtMoney(n) { return '$' + Math.floor(n).toLocaleString('en-US'); }
+export function pickRandom(rng, arr) { return arr[Math.floor(rng() * arr.length)]; }
+export function shuffleInPlace(rng, arr) {
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(rng() * (i + 1));
+    const t = arr[i]; arr[i] = arr[j]; arr[j] = t;
+  }
+  return arr;
 }

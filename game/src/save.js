@@ -1,39 +1,51 @@
-// SOLMAR CITY — localStorage save: cash, mission progress, health. Versioned,
-// tolerant of missing or corrupt data (a bad save just starts fresh).
+// Solmar City — saving to localStorage: money, mission progress, health,
+// position, wanted level and ammo. Autosaves on mission complete.
 export const SAVE_KEY = 'solmar-city-save-v1';
+
+export function hasSave() {
+  try { return !!localStorage.getItem(SAVE_KEY); } catch (e) { return false; }
+}
 
 export function saveGame(G) {
   try {
     const data = {
-      v: 1,
-      cash: G.cash,
+      money: G.money,
       missionIndex: G.missions.index,
-      missionStep: G.missions.step,
-      health: G.health,
+      completed: G.missions.completed,
+      health: G.player.health,
+      pos: [G.player.pos.x, G.player.pos.z],
+      wanted: G.wanted,
+      ammo: G.combat.mag,
+      reserve: G.combat.reserve,
       savedAt: Date.now(),
     };
     localStorage.setItem(SAVE_KEY, JSON.stringify(data));
-  } catch (e) {
-    // Storage full or blocked (private mode): the game still plays.
-  }
+    return true;
+  } catch (e) { return false; }
 }
 
-export function loadGame() {
+export function loadSave() {
   try {
     const raw = localStorage.getItem(SAVE_KEY);
     if (!raw) return null;
-    const data = JSON.parse(raw);
-    if (!data || data.v !== 1) return null;
-    return data;
-  } catch (e) {
-    return null;
-  }
+    const d = JSON.parse(raw);
+    if (typeof d.money !== 'number' || typeof d.missionIndex !== 'number') return null;
+    return d;
+  } catch (e) { return null; }
 }
 
 export function clearSave() {
   try { localStorage.removeItem(SAVE_KEY); } catch (e) { /* ignore */ }
 }
 
-export function hasSave() {
-  return loadGame() !== null;
+// Apply a loaded save to the live game state.
+export function applySave(G, d) {
+  G.money = d.money || 0;
+  G.wanted = d.wanted || 0;
+  G.player.health = d.health ?? 100;
+  G.player.setPosition(d.pos ? d.pos[0] : 84, d.pos ? d.pos[1] : 20, Math.PI);
+  G.combat.mag = d.ammo ?? 12;
+  G.combat.reserve = d.reserve ?? 60;
+  G.missions.completed = Array.isArray(d.completed) ? d.completed : [];
+  G.missions.setMission(Math.min(d.missionIndex || 0, 4));
 }
