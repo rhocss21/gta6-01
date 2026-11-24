@@ -1,3 +1,5 @@
+/* SOLMAR CITY — HUD + menu styling. Dark translucent panels over the 3D
+   city; gold is the mission accent, blue the police accent, green the cash. */
 * { box-sizing: border-box; margin: 0; padding: 0; }
 html, body { width: 100%; height: 100%; overflow: hidden; background: #0a1420;
   font-family: "Segoe UI", system-ui, -apple-system, Arial, sans-serif; color: #f2f5f7; }
@@ -6,45 +8,84 @@ html, body { width: 100%; height: 100%; overflow: hidden; background: #0a1420;
 
 /* ---------- HUD ---------- */
 #hud { position: fixed; inset: 0; pointer-events: none; z-index: 5; }
-#hud-top-left { position: absolute; top: 14px; left: 16px; }
+#hud-top-left { position: absolute; top: 12px; left: 14px; width: 300px; }
 #money { font-size: 30px; font-weight: 800; color: #7dff9a; text-shadow: 0 2px 6px rgba(0,0,0,.7); }
-#health-bar { width: 190px; height: 16px; margin-top: 4px; background: rgba(0,0,0,.55);
-  border: 1px solid rgba(255,255,255,.35); border-radius: 8px; overflow: hidden; position: relative; }
+#health-bar, #armor-bar { width: 190px; height: 14px; margin-top: 4px; background: rgba(0,0,0,.55);
+  border: 1px solid rgba(255,255,255,.35); border-radius: 7px; overflow: hidden; position: relative; }
 #health-fill { height: 100%; width: 100%; background: linear-gradient(90deg,#ff5a4e,#ff8a5c); }
-#health-num { position: absolute; inset: 0; text-align: center; font-size: 11px; font-weight: 700; line-height: 16px; }
-#ammo { margin-top: 5px; font-size: 15px; font-weight: 700; letter-spacing: 1px; color: #ffe9a8;
+#armor-fill { height: 100%; width: 0%; background: linear-gradient(90deg,#3f8cff,#9fd8ff); }
+#health-num, #armor-num { position: absolute; inset: 0; text-align: center; font-size: 10px; font-weight: 700; line-height: 14px; }
+#ammo { margin-top: 5px; font-size: 14px; font-weight: 700; letter-spacing: 1px; color: #ffe9a8;
   text-shadow: 0 2px 4px rgba(0,0,0,.8); }
-#debt { margin-top: 3px; font-size: 11px; letter-spacing: 1px; color: #ffb3a7; opacity: .9;
+#weapons { margin-top: 3px; display: flex; flex-wrap: wrap; gap: 4px; }
+.wslot { font-size: 10px; font-weight: 700; letter-spacing: .5px; background: rgba(0,0,0,.55);
+  border: 1px solid rgba(255,255,255,.3); border-radius: 4px; padding: 2px 6px; color: #ffe9a8; }
+.wslot.locked { color: #8fa8b8; border-color: rgba(255,255,255,.15); }
+#debt { margin-top: 5px; font-size: 11px; font-weight: 800; letter-spacing: .5px; color: #ffb3a7;
   text-shadow: 0 1px 3px rgba(0,0,0,.8); }
-#mission-banner { position: absolute; top: 14px; left: 50%; transform: translateX(-50%);
-  background: rgba(0,0,0,.55); border: 1px solid rgba(255,211,77,.55); border-radius: 20px;
-  padding: 8px 18px; font-size: 16px; font-weight: 600; white-space: nowrap; max-width: 62vw;
-  overflow: hidden; text-overflow: ellipsis; }
+#mission-banner { position: absolute; top: 12px; left: 50%; transform: translateX(-50%);
+  background: rgba(0,0,0,.6); border: 1px solid rgba(255,211,77,.55); border-radius: 12px;
+  padding: 7px 16px; font-size: 14px; font-weight: 600; text-align: center; max-width: 560px; }
+#mission-stage { font-size: 11px; font-weight: 800; letter-spacing: 2px; color: #ffd34d; }
+#mission-line { margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 #mission-arrow { color: #ffd34d; }
 #mission-dist { color: #9fd8ff; font-weight: 800; margin-left: 6px; }
-#hud-top-right { position: absolute; top: 14px; right: 16px; text-align: right; }
+#mission-next { font-size: 12px; color: #cfe8ff; margin-top: 2px; }
+#mission-timer { font-size: 12px; font-weight: 800; color: #ff9ecf; margin-top: 2px; }
+#hud-top-right { position: absolute; top: 12px; right: 14px; text-align: right; width: 300px; }
 #stars span { font-size: 26px; color: rgba(255,255,255,.25); text-shadow: 0 2px 4px rgba(0,0,0,.7); margin-left: 2px; }
 #stars span.lit { color: #ffd34d; }
-#rank { font-size: 13px; letter-spacing: 3px; font-weight: 800; color: #ffd34d; margin-top: 2px;
+#wanted-status { font-size: 11px; font-weight: 800; letter-spacing: 1px; color: #ff8a7a; margin-top: 1px;
+  text-shadow: 0 1px 3px rgba(0,0,0,.8); }
+#rank { font-size: 12px; letter-spacing: 1px; font-weight: 800; color: #ffd34d; margin-top: 3px;
   text-shadow: 0 2px 4px rgba(0,0,0,.8); }
+#respect-bar { width: 190px; height: 7px; margin: 3px 0 0 auto; background: rgba(0,0,0,.55);
+  border: 1px solid rgba(255,255,255,.3); border-radius: 4px; overflow: hidden; }
+#respect-fill { height: 100%; width: 0%; background: #ffd34d; }
+#clock { font-size: 20px; font-weight: 800; color: #fff; margin-top: 4px; text-shadow: 0 2px 4px rgba(0,0,0,.8); }
+#dispatch { margin-top: 6px; background: rgba(0,0,0,.6); border: 1px solid rgba(63,140,255,.6);
+  border-radius: 8px; padding: 6px 8px; text-align: left; }
+#dispatch-title { font-size: 10px; font-weight: 800; letter-spacing: 2px; color: #9fd8ff; margin-bottom: 3px; }
+.dispatch-row { display: flex; gap: 6px; font-size: 11px; font-weight: 700; padding: 1px 0; }
+.dispatch-row.hot .d-role { color: #ff5a4e; }
+.d-name { color: #fff; min-width: 74px; }
+.d-role { color: #ffd34d; min-width: 74px; }
+.d-dist { color: #9fb3c0; margin-left: auto; white-space: nowrap; }
+#crew { position: absolute; left: 14px; top: 218px; display: flex; flex-direction: column; gap: 5px; }
+.crew-card { background: rgba(0,0,0,.55); border: 1px solid rgba(255,255,255,.25); border-radius: 7px;
+  padding: 5px 9px; font-size: 11px; font-weight: 700; width: 190px; }
+.crew-name { display: block; font-size: 12px; letter-spacing: 1px; }
+.crew-role { color: #cfe0ea; }
+#radio { position: absolute; left: 14px; top: 296px; font-size: 12px; font-weight: 700; color: #ff9ecf;
+  background: rgba(0,0,0,.5); border-radius: 6px; padding: 4px 9px; text-shadow: 0 1px 3px rgba(0,0,0,.8); }
 #crosshair { position: absolute; left: 50%; top: 50%; transform: translate(-50%,-50%);
   font-size: 26px; font-weight: 300; color: rgba(255,255,255,.9); text-shadow: 0 0 4px #000; }
-#speed { position: absolute; bottom: 22px; left: 50%; transform: translateX(-50%);
-  font-size: 30px; font-weight: 800; text-shadow: 0 2px 6px rgba(0,0,0,.8); }
-#speed-unit { font-size: 14px; color: #cfe8ff; }
-#prompt { position: absolute; bottom: 84px; left: 50%; transform: translateX(-50%);
+#speed { position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%); text-align: center;
+  font-size: 34px; font-weight: 800; text-shadow: 0 2px 6px rgba(0,0,0,.8); }
+#speed-label { font-size: 14px; color: #cfe8ff; }
+#speed-sub { font-size: 12px; font-weight: 700; letter-spacing: 1px; color: #ffe9a8; }
+#prompt { position: absolute; bottom: 108px; left: 50%; transform: translateX(-50%);
   background: rgba(0,0,0,.65); border: 1px solid #ffd34d; border-radius: 8px; padding: 7px 16px;
   font-size: 16px; font-weight: 600; white-space: nowrap; }
 #prompt b { color: #ffd34d; }
-#rob-wrap { position: absolute; bottom: 130px; left: 50%; transform: translateX(-50%); width: 300px; text-align: center; }
+#rob-wrap { position: absolute; bottom: 150px; left: 50%; transform: translateX(-50%); width: 300px; text-align: center; }
 #rob-label { font-size: 14px; font-weight: 800; letter-spacing: 1px; color: #ffd34d; margin-bottom: 6px;
   text-shadow: 0 2px 4px rgba(0,0,0,.8); }
 #rob-bar { height: 12px; background: rgba(0,0,0,.6); border: 1px solid #ffd34d; border-radius: 6px; overflow: hidden; }
 #rob-fill { height: 100%; width: 0%; background: #ffd34d; }
-#toasts { position: absolute; top: 110px; left: 50%; transform: translateX(-50%); text-align: center; }
+#toasts { position: absolute; top: 158px; left: 50%; transform: translateX(-50%); text-align: center; }
 .toast { background: rgba(0,0,0,.65); border-radius: 8px; padding: 7px 16px; margin-top: 6px;
   font-size: 15px; font-weight: 600; display: inline-block; }
 .toast.gold { color: #ffd34d; border: 1px solid #ffd34d; }
+#dialogue { position: absolute; left: 14px; bottom: 20px; display: flex; gap: 10px; align-items: flex-start;
+  background: rgba(0,0,0,.62); border: 1px solid rgba(255,211,77,.5); border-radius: 10px;
+  padding: 9px 12px; width: 430px; }
+#dialogue-portrait { width: 42px; height: 42px; border-radius: 50%; background: #ffd34d; color: #1a1200;
+  font-size: 22px; font-weight: 900; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+#dialogue-name { font-size: 11px; font-weight: 800; letter-spacing: 1.5px; }
+#dialogue-line { font-size: 14px; line-height: 1.4; color: #f2f5f7; margin-top: 2px; }
+#location { position: absolute; right: 16px; bottom: 206px; font-size: 12px; font-weight: 800;
+  letter-spacing: 1.5px; color: #fff; text-shadow: 0 2px 4px rgba(0,0,0,.9); text-align: right; }
 #minimap { position: absolute; right: 16px; bottom: 16px; width: 180px; height: 180px;
   border-radius: 50%; border: 2px solid rgba(255,255,255,.7); background: #0c2733;
   box-shadow: 0 4px 18px rgba(0,0,0,.5); }

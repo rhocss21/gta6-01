@@ -16,19 +16,37 @@
   <div id="hud-top-left">
     <div id="money">$0</div>
     <div id="health-bar"><div id="health-fill"></div><span id="health-num">100</span></div>
+    <div id="armor-bar"><div id="armor-fill"></div><span id="armor-num">0</span></div>
     <div id="ammo">PISTOL 12/12</div>
-    <div id="debt">DEBT TO MARA: $50,000</div>
+    <div id="weapons"></div>
+    <div id="debt">DEBT $50,000 → $45,200 AFTER THIS JOB</div>
   </div>
-  <div id="mission-banner"><span id="mission-arrow">▶</span> <span id="mission-text"></span> <span id="mission-dist"></span></div>
+  <div id="mission-banner">
+    <div id="mission-stage">JOB 1/5 · STAGE 1/2</div>
+    <div id="mission-line"><span id="mission-arrow">▶</span> <span id="mission-text"></span> <span id="mission-dist"></span></div>
+    <div id="mission-next"></div>
+    <div id="mission-timer"></div>
+  </div>
   <div id="hud-top-right">
     <div id="stars"><span>★</span><span>★</span><span>★</span><span>★</span><span>★</span></div>
+    <div id="wanted-status">CLEAN — NO HEAT</div>
     <div id="rank">ROOKIE</div>
+    <div id="respect-bar"><div id="respect-fill"></div></div>
+    <div id="clock">18:47</div>
+    <div id="dispatch"><div id="dispatch-title">SOLMAR PD · DISPATCH</div></div>
   </div>
+  <div id="crew"></div>
+  <div id="radio">♪ RADIO MANGO 98.6 — Guava Sunrise</div>
   <div id="crosshair">+</div>
-  <div id="speed"><span id="speed-num">0</span> <span id="speed-unit">mph</span></div>
+  <div id="speed"><span id="speed-num">0</span> <span id="speed-label">km/h</span><div id="speed-sub">ON FOOT · SPRINT</div></div>
   <div id="prompt"></div>
   <div id="rob-wrap" class="hidden"><div id="rob-label">HOLDING UP THE SHOP…</div><div id="rob-bar"><div id="rob-fill"></div></div></div>
   <div id="toasts"></div>
+  <div id="dialogue">
+    <div id="dialogue-portrait">M</div>
+    <div id="dialogue-body"><div id="dialogue-name">MARA VOSS · FIXER</div><div id="dialogue-line"></div></div>
+  </div>
+  <div id="location">KUMALA STRAND · Solmar Beach</div>
   <canvas id="minimap" width="360" height="360"></canvas>
   <div id="vignette"></div>
 </div>
