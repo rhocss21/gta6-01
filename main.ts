@@ -1,43 +1,47 @@
 // SOLMAR CITY — the entrypoint program for make.fun gta6-01.
-// It hands the game in: pre-flight gate checks (the bounty caps), then it
-// copies game/ and screenshots/ into MAKEFUN_OUTPUT_DIR (or /output) and
-// writes /output/dossier.json with buildDossier from vendor/makefun-game.ts.
+// Gate checks first (the bounty caps), then it copies game/ and
+// screenshots/ into MAKEFUN_OUTPUT_DIR (or /output) and writes
+// /output/dossier.json with buildDossier from vendor/makefun-game.ts.
 // Node 22, standard library only. Deterministic: two runs write identical bytes.
-import { cpSync, existsSync, lstatSync, mkdirSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { join, resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { buildDossier } from './vendor/makefun-game.ts';
 
-const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)));
-const OUT_DIR = resolve(process.env.MAKEFUN_OUTPUT_DIR || '/output');
+const ROOT = resolve(dirname(fileURLToPath(import.meta.url)));
+const DEST = resolve(process.env.MAKEFUN_OUTPUT_DIR || '/output');
 
 // The bounty's gate caps (see the kit's RULES.txt / gate.json).
-const CAPS = {
+const LIMITS = {
   text_max_bytes: 163840,
   screenshots: { max: 4, max_bytes: 262144 },
   game_max_files: 993,
   game_max_bytes: 50331648,
   game_path_max_bytes: 1000,
 };
-const INDEX_HTML_MAX_BYTES = 1024 * 1024;
+const INDEX_HTML_MAX = 1024 * 1024;
 
 // ---- pre-flight gate: refuse early, with a plain reason, when a cap is over ----
-function countGameTree(dir, rel) {
-  let files = 0, bytes = 0;
+function measureTree(dir, rel) {
+  let files = 0;
+  let bytes = 0;
   for (const name of readdirSync(dir)) {
     const p = join(dir, name);
     const r = rel === '' ? name : `${rel}/${name}`;
-    if (Buffer.byteLength(r, 'utf8') > CAPS.game_path_max_bytes) {
-      throw new Error(`gate: game/${r}: path over ${CAPS.game_path_max_bytes} bytes`);
+    if (Buffer.byteLength(r, 'utf8') > LIMITS.game_path_max_bytes) {
+      throw new Error(`gate: game/${r}: path over ${LIMITS.game_path_max_bytes} bytes`);
     }
     const st = lstatSync(p);
     if (st.isSymbolicLink()) throw new Error(`gate: game/${r}: symbolic links are not allowed`);
     if (st.isDirectory()) {
       files += 1;
-      const sub = countGameTree(p, r);
-      files += sub.files; bytes += sub.bytes;
+      const sub = measureTree(p, r);
+      files += sub.files;
+      bytes += sub.bytes;
     } else if (st.isFile()) {
-      files += 1; bytes += st.size;
+      files += 1;
+      bytes += st.size;
     } else {
       throw new Error(`gate: game/${r}: not a plain file or directory`);
     }
@@ -45,17 +49,17 @@ function countGameTree(dir, rel) {
   return { files, bytes };
 }
 
-function checkScreenshots(dir) {
+function checkShots(dir) {
   if (!existsSync(dir)) throw new Error('gate: screenshots/: no such directory');
   const names = readdirSync(dir).filter((n) => !n.startsWith('.')).sort();
-  if (names.length < 3 || names.length > CAPS.screenshots.max) {
+  if (names.length < 3 || names.length > LIMITS.screenshots.max) {
     throw new Error(`gate: screenshots/: ${names.length} images, need 3 or 4`);
   }
   let total = 0;
   for (const n of names) {
     const st = statSync(join(dir, n));
     if (!st.isFile()) throw new Error(`gate: screenshots/${n}: not a file`);
-    if (st.size > CAPS.screenshots.max_bytes) {
+    if (st.size > LIMITS.screenshots.max_bytes) {
       throw new Error(`gate: screenshots/${n}: ${st.size} bytes, over the 256 KiB cap`);
     }
     total += st.size;
@@ -63,33 +67,45 @@ function checkScreenshots(dir) {
   return { names, total };
 }
 
-const gameDir = join(REPO_ROOT, 'game');
-const shotsDir = join(REPO_ROOT, 'screenshots');
+const gameDir = join(ROOT, 'game');
+const shotsDir = join(ROOT, 'screenshots');
 if (!existsSync(gameDir)) throw new Error('gate: game/: no such directory');
-const tree = countGameTree(gameDir, '');
-if (tree.files > CAPS.game_max_files) {
-  throw new Error(`gate: game/: ${tree.files} entries, over the ${CAPS.game_max_files} cap`);
+const tree = measureTree(gameDir, '');
+if (tree.files > LIMITS.game_max_files) {
+  throw new Error(`gate: game/: ${tree.files} entries, over the ${LIMITS.game_max_files} cap`);
 }
-if (tree.bytes > CAPS.game_max_bytes) {
+if (tree.bytes > LIMITS.game_max_bytes) {
   throw new Error(`gate: game/: ${tree.bytes} bytes, over the 48 MiB cap`);
 }
 const indexStat = statSync(join(gameDir, 'index.html'));
-if (indexStat.size > INDEX_HTML_MAX_BYTES) {
+if (indexStat.size > INDEX_HTML_MAX) {
   throw new Error(`gate: game/index.html: ${indexStat.size} bytes, over the 1 MiB cap`);
 }
-const shots = checkScreenshots(shotsDir);
+const shots = checkShots(shotsDir);
+
+// ---- shots.json cross-check: the staged-shot manifest must name exactly
+// the files on disk, so a renamed screenshot cannot slip through silently ----
+const manifestPath = join(ROOT, 'shots.json');
+if (existsSync(manifestPath)) {
+  const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
+  const wanted = manifest.map((s) => s.name).sort();
+  const have = shots.names.slice().sort();
+  if (JSON.stringify(wanted) !== JSON.stringify(have)) {
+    throw new Error(`gate: shots.json lists [${wanted.join(', ')}] but screenshots/ has [${have.join(', ')}]`);
+  }
+}
 
 // ---- hand-in: copy, then write the dossier buildDossier computes ----
-// Never remove OUT_DIR itself: in the grader it is a bind-mounted volume and
+// Never remove DEST itself: in the grader it is a bind-mounted volume and
 // removing a mount point fails (EBUSY). Create it, then clear only its contents.
-mkdirSync(OUT_DIR, { recursive: true });
-for (const name of readdirSync(OUT_DIR)) {
-  rmSync(join(OUT_DIR, name), { recursive: true, force: true });
+mkdirSync(DEST, { recursive: true });
+for (const name of readdirSync(DEST)) {
+  rmSync(join(DEST, name), { recursive: true, force: true });
 }
-cpSync(gameDir, join(OUT_DIR, 'game'), { recursive: true });
-cpSync(shotsDir, join(OUT_DIR, 'screenshots'), { recursive: true });
-const dossier = buildDossier(OUT_DIR, CAPS);
-writeFileSync(join(OUT_DIR, 'dossier.json'), dossier);
+cpSync(gameDir, join(DEST, 'game'), { recursive: true });
+cpSync(shotsDir, join(DEST, 'screenshots'), { recursive: true });
+const dossier = buildDossier(DEST, LIMITS);
+writeFileSync(join(DEST, 'dossier.json'), dossier);
 
 // ---- run summary ----
 console.log('SOLMAR CITY — hand-in complete');
@@ -97,4 +113,5 @@ console.log(`  game/: ${tree.files} entries, ${tree.bytes} bytes`);
 console.log(`  game/index.html: ${indexStat.size} bytes`);
 console.log(`  screenshots/: ${shots.names.join(', ')} (${shots.total} bytes)`);
 console.log(`  dossier.json: ${dossier.length} bytes`);
-console.log(`  output: ${OUT_DIR}`);
+console.log(`  dossier sha256: ${createHash('sha256').update(dossier).digest('hex')}`);
+console.log(`  output: ${DEST}`);

@@ -1,22 +1,39 @@
 // SOLMAR CITY — tiny static server for local playtesting: serves game/ on a
 // port (default 8080). Node standard library only.
-import { createServer } from 'node:http';
 import { createReadStream, existsSync, statSync } from 'node:fs';
+import { createServer } from 'node:http';
 import { join, extname, resolve, normalize } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = resolve(join(fileURLToPath(import.meta.url), '..', 'game'));
-const PORT = parseInt(process.argv.find((a) => a.startsWith('--port='))?.slice(7) || process.argv[process.argv.indexOf('--port') + 1] || '8080', 10) || 8080;
+const argv = process.argv.slice(2);
+const portArg = argv.find((a) => a.startsWith('--port='))?.slice(7)
+  || argv[argv.indexOf('--port') + 1]
+  || '8080';
+const PORT = parseInt(portArg, 10) || 8080;
 
 const TYPES = {
   '.html': 'text/html; charset=utf-8',
-  '.css': 'text/css; charset=utf-8',
   '.js': 'text/javascript; charset=utf-8',
   '.mjs': 'text/javascript; charset=utf-8',
+  '.css': 'text/css; charset=utf-8',
   '.json': 'application/json; charset=utf-8',
   '.png': 'image/png',
   '.jpg': 'image/jpeg',
   '.jpeg': 'image/jpeg',
+  '.gif': 'image/gif',
+  '.webp': 'image/webp',
+  '.svg': 'image/svg+xml',
+  '.ico': 'image/x-icon',
+  '.woff2': 'font/woff2',
+  '.glb': 'model/gltf-binary',
+  '.gltf': 'model/gltf+json',
+  '.bin': 'application/octet-stream',
+  '.wasm': 'application/wasm',
+  '.wav': 'audio/wav',
+  '.mp3': 'audio/mpeg',
+  '.ogg': 'audio/ogg',
+  '.txt': 'text/plain; charset=utf-8',
 };
 
 const server = createServer((req, res) => {
